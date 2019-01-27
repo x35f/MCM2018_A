@@ -13,9 +13,8 @@ flight_horizon=0.1
 ground_horizon=0.1
 
 
-env_type=ENV_TYPE.Arid
-
-
+env_type=ENV_TYPE.Temperate
+dragon_init_quality=40
 
 
 class Scenario(BaseScenario):
@@ -23,15 +22,18 @@ class Scenario(BaseScenario):
         if env_type==ENV_TYPE.Arctic:
             self.dens_l_anim=0.449
             self.dens_s_anim=1.0
+            range_coef=0.0136
         elif env_type==ENV_TYPE.Arid:
             self.dens_l_anim=0.019
             self.dens_s_anim=0.3
-        elif env.type==ENV_TYPE.Temperate:
+            range_coef=3961
+        elif env_type==ENV_TYPE.Temperate:
             self.dens_l_anim=0.862
             self.dens_s_anim=3.4
+            range_coef=0.01
         else:
-         raise NotImplementedError("Not implemented environment")
-        init_home_range=world.dragon_home_range
+            raise NotImplementedError("Not implemented environment")
+        init_home_range=range_coef*(dragon_init_quality**1.8)
         self.num_l_anim=int(init_home_range*self.dens_l_anim)
         self.num_s_anim=int(init_home_range*self.dens_s_anim)
         #print("init l:",num_l_anim,"\ts:",num_s_anim)
@@ -54,6 +56,7 @@ class Scenario(BaseScenario):
         for i, agent in enumerate(world.agents):
             if i<num_dragon:
                 world.set_dragon(i)
+
             elif i<num_dragon+self.num_l_anim:
                 world.set_l(i)
             elif i<num_dragon+self.num_l_anim+self.num_s_anim:
@@ -98,7 +101,6 @@ class Scenario(BaseScenario):
             landmark.state.p_vel = np.zeros(world.dim_p)
         goal.state.p_pos=np.array([0.0,0.0])
         goal.state.p_vel = np.zeros(world.dim_p)
-
     def benchmark_data(self, agent, world):
         # returns data for benchmarking purposes
         if agent.adversary:
@@ -186,7 +188,7 @@ class Scenario(BaseScenario):
             if other is agent: continue
             #print(other.name," ",other.state.p_pos," <-> ",agent.state.p_pos)
             if dis(other.state.p_pos - agent.state.p_pos)<agent.horizon:
-                if "large" in other.name:
+                if "large" in other.name and agent.quality>world.l_biomas:
                     large_n+=1
                 else:
                     small_n+=1
