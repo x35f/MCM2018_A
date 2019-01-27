@@ -1,22 +1,18 @@
 import numpy as np
 from math import sqrt
+from enum import Enum
 def dis(a,b):
     dx=a[0]-b[0]
     dy=a[1]-b[1]
     return sqrt(dx*dx+dy*dy)
 
-num_dragon=1
-num_l_anim=100
-num_s_anim=1000
-num_tree=0
-num_home=1
-num_agents=0
+
 dragon_init_pos=np.array([0.5,0.5])
 flight_horizon=0.1
 ground_horizon=0.1
 #agent self prob
-l_biomas=0.5
-s_biomas=0.2
+l_biomas=52
+s_biomas=10.6
 #eaten prob
 l_eaten_prob=0.8
 s_eaten_prob=0.5
@@ -27,13 +23,21 @@ s_range=0.001
 tree_range=0.0
 
 #dragon property
-fat_percentage=0.25
+fat=7
 hunt_energy_cost=0.05
 regular_energy_cost=0.01 #per 100 timestep
 convert_perc=0.1
 convert_fat_perc=0.25
-
+dragon_init_quality=400
+exp_income=0.0045*dragon_init_quality**0.75+1.2*dragon_init_quality**0.22+0.25*dragon_init_quality
+day_steps=100
 # physical/external base state of all entites
+
+class ENV_TYPE(Enum):
+    Arctic=1
+    Arid=2
+    Temperate=3
+
 class EntityState(object):
     def __init__(self):
         # physical position
@@ -78,8 +82,8 @@ class Entity(object):
         self.state = EntityState()
         # mass
         self.initial_mass = 1.0
-        self.fat=fat_percentage
-        self.quality=1.0
+        self.fat=fat
+        self.quality=0.0
     @property
     def mass(self):
         return self.initial_mass
@@ -117,7 +121,6 @@ class Agent(Entity):
         self.eaten_prob=0.0
         #dragon property
         self.exp_income=0
-        self.hunt_range=0.0
         self.hunt_cost=100
         self.energy=100
         self.velocity=0
@@ -125,9 +128,10 @@ class Agent(Entity):
         self.convert_perc=convert_perc
         self.convert_fat_perc=convert_fat_perc
         self.regular_energy_cost=regular_energy_cost
+        self.exp_incom=exp_income
         #pray property
         self.grouth_prob=0.01 # by group size of  hundred in 1 timestep
-
+        self.horizon=0.01
 # multi-agent world
 class World(object):
     def __init__(self):
@@ -165,6 +169,50 @@ class World(object):
         return [agent for agent in self.agents if agent.action_callback is not None]
 
     # update state of the world
+    def set_env(self,env_type):
+        if env_type==ENV_TYPE.Arctic:
+            self.dens_l_anim=0.449
+            self.dens_s_anim=1.0
+            self.l_abs_radius=14.6
+            self.s_abs_radius=2.82
+            self.l_biomas=406
+            self.s_biomas=7.85
+            self.home_range_coef=0.0136
+        elif env_type==ENV_TYPE.Arid:
+            self.dens_l_anim=0.019
+            self.dens_s_ainm=0.3
+            self.l_abs_radius=12.4
+            self.s_abs_radius=3
+            self.l_biomas=52
+            self.s_biomas=10.6
+            self.home_range_coef=0.3961
+        elif env.type==ENV_TYPE.Temperate:
+            self.dens_l_anim=0.862
+            self.dens_s_anim=3.4
+            self.l_abs_radius=31.4
+            self.s_abs_radius=14.93
+            self.l_biomas=3938
+            self.s_biomas=27
+            self.home_range_coef=0.001
+        else:
+         raise NotImplementedError("Not implemented environment")
+        self.set_dragon_home_range(dragon_init_quality)
+
+    def set_dragon_home_range(self,m):
+        self.dragon_home_range=self.home_range_coef*(m**1.8)
+        self.dragon_home_radius=sqrt(self.dragon_home_range/3.14)
+        #print("init range:", self.dragon_home_range,"\t radius:",self.dragon_home_radius)
+
+    def relative_home_range(self,entity):
+        if 'large' in entity.name:
+            return self.l_abs_radius/self.dragon_home_radius
+        elif 'small' in entity.name:
+            return self.s_abs_radius/self.dragon_home_radius
+        elif 'dragon' in entity.name:
+            return 1.0
+        else:
+            raise NotImplementedError("Not implemented environment")
+
     def step(self):
         # set actions for scripted agents
         for agent in self.scripted_agents:
@@ -228,7 +276,7 @@ class World(object):
         [x,y]=entity.state.p_pos
 
         dist=dis([x,y],entity.base_pos)
-        if dist>entity.home_range:
+        if dist>self.relative_home_range(entity):
             dx=x-entity.base_pos[0]
             dy=y-entity.base_pos[1]
             dx/=dist
@@ -277,23 +325,25 @@ class World(object):
         self.agents[id].collide = False
         self.agents[id].adversary = True
         self.agents[id].size = 0.05
-        self.agents[id].hunt_range=flight_horizon
+        self.agents[id].horizon=flight_horizon
         self.agents[id].home_range=drag_range
         self.agents[id].hunt_energy_cost=hunt_energy_cost
         self.agents[id].state.p_pos=np.array([0.0,0.0])
         self.agents[id].state.p_vel=np.zeros(self.dim_p)
         self.agents[id].base_pos=np.array([0.0,0.0])
         self.agents[id].state.c = np.zeros(self.dim_c)
-        self.agents[id].base_pos=self.agents[id].state.p_pos
         self.agents[id].color = np.array([0.35, 0.0, 0.0])
         self.agents[id].silent=True
-
+        self.agents[id].quality=dragon_init_quality
+        self.agents[id].fat=fat
+        self.agents[id].stationary_cost=0.0045*(dragon_init_quality**0.75)
+        self.agents[id].patrol_cost=1.2*(dragon_init_quality**0.22)
     def set_l(self,id=0):
         self.agents[id].name = 'large %d' % id
         self.agents[id].collide = False
         self.agents[id].adversary = False
         self.agents[id].size = 0.03
-        self.agents[id].biomas=l_biomas
+        self.agents[id].biomas=self.l_biomas
         self.agents[id].eaten_prob=l_eaten_prob
         self.agents[id].home_range=l_range
         pos=np.random.uniform(-1, +1, self.dim_p)
@@ -301,7 +351,6 @@ class World(object):
         self.agents[id].state.p_vel=np.zeros(self.dim_p)
         self.agents[id].base_pos=pos
         self.agents[id].state.c = np.zeros(self.dim_c)
-        self.agents[id].base_pos=self.agents[id].state.p_pos
         self.agents[id].color = np.array([0.0, 0.0, 0.35])
         self.agents[id].silent=True
 
@@ -310,7 +359,7 @@ class World(object):
         self.agents[id].collide=False
         self.agents[id].adversary=False
         self.agents[id].size=0.01
-        self.agents[id].biomas=s_biomas
+        self.agents[id].biomas=self.s_biomas
         self.agents[id].eaten_prob=s_eaten_prob
         self.agents[id].home_range=s_range
         pos=np.random.uniform(-1, +1, self.dim_p)
@@ -318,6 +367,5 @@ class World(object):
         self.agents[id].state.p_vel=np.zeros(self.dim_p)
         self.agents[id].base_pos=pos
         self.agents[id].state.c = np.zeros(self.dim_c)
-        self.agents[id].base_pos=self.agents[id].state.p_pos
         self.agents[id].color=np.array([0.2,0.2,0.2])
         self.agents[id].silent=True

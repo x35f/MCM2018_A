@@ -6,14 +6,26 @@ from multiagent.core import Agent
 import numpy as np
 from multiagent.multi_discrete import MultiDiscrete
 from random import random,randint
+from enum import Enum
 # environment for all agents in the multiagent world
 # currently code assumes that no agents will be created/destroyed at runtime!
 def dis(a,b):
     dx=a[0]-b[0]
     dy=a[1]-b[1]
     return sqrt(dx*dx+dy*dy)
+
 s_birth_prob=0.01 #by group of a hundred
 l_birth_prob=0.001 #by group of a hundred
+
+day_step=100
+
+class ENV_TYPE(Enum):
+    Arctic=1
+    Arid=2
+    Temperate=3
+
+env_type=ENV_TYPE.Arctic
+
 class MultiAgentEnv(gym.Env):
     metadata = {
         'render.modes' : ['human', 'rgb_array']
@@ -99,6 +111,8 @@ class MultiAgentEnv(gym.Env):
         else:
             self.viewers = [None] * self.n
         self.changed_in_step=True
+        self.act_space=self.action_space[0]
+        self.obs_space=self.observation_space[0]
         self._reset_render()
 
     @property
@@ -110,6 +124,7 @@ class MultiAgentEnv(gym.Env):
     def record_dragon_init_state(self):
         self.dragon_init_home_range=self.dragon.home_range
         self.d_mass=0.0
+        self.d_fat=0.0
     def gene_random_actions(self):
         actions=[]
         for i in range(self.n):
@@ -118,16 +133,18 @@ class MultiAgentEnv(gym.Env):
             actions.append(action)
         return actions
 
-    def step(self, action_n):
+    def step(self, action):
         self.step_count+=1
-        action_n=[action_n]
+        self.record_dragon_init_state()
+        if action[0]==1:
+            self.d_fat-=self.dragon.stationary_cost/day_step
+        else:
+            self.d_fat-=self.dragon.patrol_cost/day_step
+        action_n=[action]
 
         action_n=action_n+self.gene_random_actions()
-        self.record_dragon_init_state()
-        obs_n = []
-        reward_n = []
-        done_n = []
-        info_n = {'n': []}
+
+        info = {'n': []}
         self.changed_in_step=False
         self.agents = self.world.policy_agents
         # set action for each agent
@@ -141,22 +158,18 @@ class MultiAgentEnv(gym.Env):
             if action_n[0][5]==1:
                 self.hunt_step()
         # record observation for each agent
-        for agent in self.agents:
-            obs_n.append(self._get_obs(agent))
-            reward_n.append(self._get_reward(agent))
-            done_n.append(self._get_done(agent))
-            if "dragon" in agent.name:
-                #print("Dragon id",self.agents.index(agent))
-                info_n['mass']=agent.quality
-                info_n['fat']=agent.fat
-        # all agents get total reward in cooperative case
-        reward = np.sum(reward_n)
-        if self.shared_reward:
-            reward_n = [reward] * self.n
-        self.growth_step()
 
+        # all agents get total reward in cooperative case
+        obs=self._get_obs(self.dragon)
+        rew=self._get_reward(self.dragon)
+        done=self._get_done(self.dragon)
+        self.growth_step()
         self.world_update()
-        return obs_n, reward_n, done_n, info_n
+        info['mass']=self.dragon.quality
+        info['fat']=self.dragon.fat
+        info['large_n']=self.n_l
+        info['small_n']=self.n_s
+        return obs, rew, done, info
 
 
     def growth_step(self):
@@ -179,10 +192,11 @@ class MultiAgentEnv(gym.Env):
 
     def world_update(self):
         self.world.entites=[]
+        self.n_dragon=0
+        self.n_l=0
+        self.n_s=0
         for agent in self.agents:
-            self.n_dragon=0
-            self.n_l=0
-            self.n_s=0
+
             if "dragon" in agent.name:
                 self.n_dragon+=1
             elif "large" in agent.name:
@@ -190,6 +204,7 @@ class MultiAgentEnv(gym.Env):
             else:
                 self.n_s+=1
             self.world.entites.append(agent)
+        #print("n_count:",self.n_l," ",self.n_s)
         for landmark in self.world.landmarks:
             self.world.entities.append(landmark)
         self.world.num_agents=len(self.agents)
@@ -201,27 +216,34 @@ class MultiAgentEnv(gym.Env):
         self.environment_update()
 
     def dragon_state_update(self):
-        if self.step_count%20 ==0:
-            self.d_mass-=self.dragon.regular_energy_cost
+        if self.step_count%day_step ==0:
+            #daily update
+
+            self.step_count=1
         #self.dragon.mass
         d_mass=self.d_mass*self.dragon.convert_perc
+        self.dragon.fat+=self.d_fat
         #print("mass:",self.dragon.mass)
         self.dragon.quality+=d_mass
         self.dragon.fat+=d_mass*self.dragon.convert_fat_perc
-        #self.dragon.home_range=
-
+        m=self.dragon.quality
+        self.world.set_dragon_home_range(m)
+        self.dragon.exp_incoe=0.0045*(m**0.75)+1.2*(m**0.22)+0.25*m
+        self.dragon.hunt_cost=0.05*m
+        self.dragon.patrol_cost=1.2*(m**0.22)
+        self.dragon.stationary_cost=0.0045*(m**0.75)
 
     def environment_update(self):
         return
 
     def hunt_step(self):
-        #print("hunting")
-        self.d_mass-=self.agents[0].hunt_energy_cost
+        #print("hunting with range",self.dragon.horizon)
+        self.d_fat-=self.agents[0].hunt_energy_cost
         hunt_pos=self.agents[0].state.p_pos
         closest_agent_id=-1
-        closest_dis=self.agents[0].hunt_range
+        closest_dis=self.dragon.horizon
         for i,agent in enumerate(self.agents):
-            if i>1:
+            if i>=1:
                 dist=dis(hunt_pos,agent.state.p_pos)
                 if closest_dis>dist:
                     closest_agent_id=i
@@ -232,7 +254,9 @@ class MultiAgentEnv(gym.Env):
 
     def eat_agent(self,agent_id):
         seed=random()
+        #print("prob:",self.agents[agent_id].eaten_prob)
         if seed<self.agents[agent_id].eaten_prob:
+            #print("biomas=",self.agents[agent_id].biomas)
             self.d_mass+=self.agents[agent_id].biomas
             del self.agents[agent_id]
             del self.world.agents[agent_id]
@@ -448,11 +472,11 @@ class BatchMultiAgentEnv(gym.Env):
 
     @property
     def action_space(self):
-        return self.env_batch[0].action_space
+        return self.env_batch[0].action_space[0]
 
     @property
     def observation_space(self):
-        return self.env_batch[0].observation_space
+        return self.env_batch[0].observation_space[0]
 
     def step(self, action_n, time):
         obs_n = []

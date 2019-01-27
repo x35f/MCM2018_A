@@ -1,24 +1,50 @@
 import numpy as np
 from math import sqrt
-from multiagent.core import World, Agent, Landmark
+from multiagent.core import World, Agent, Landmark,ENV_TYPE
 from multiagent.scenario import BaseScenario
 
 num_dragon=1
-num_l_anim=100
-num_s_anim=500
-num_tree=100
+num_l_anim=0
+num_s_anim=0
+num_tree=0
 num_home=1
 num_agents=0
 flight_horizon=0.1
 ground_horizon=0.1
 
+
+env_type=ENV_TYPE.Arid
+
+
+
+
 class Scenario(BaseScenario):
+    def set_env(self,env_type,world):
+        if env_type==ENV_TYPE.Arctic:
+            self.dens_l_anim=0.449
+            self.dens_s_anim=1.0
+        elif env_type==ENV_TYPE.Arid:
+            self.dens_l_anim=0.019
+            self.dens_s_anim=0.3
+        elif env.type==ENV_TYPE.Temperate:
+            self.dens_l_anim=0.862
+            self.dens_s_anim=3.4
+        else:
+         raise NotImplementedError("Not implemented environment")
+        init_home_range=world.dragon_home_range
+        self.num_l_anim=int(init_home_range*self.dens_l_anim)
+        self.num_s_anim=int(init_home_range*self.dens_s_anim)
+        #print("init l:",num_l_anim,"\ts:",num_s_anim)
 
     def make_world(self):
         world = World()
+        world.set_env(env_type)
+        self.set_env(env_type,world)
+
         # set any world properties first
         world.dim_c = 2
-        num_agents = num_dragon+num_l_anim+num_s_anim
+        #print("init l:",num_l_anim,"\ts:",num_s_anim)
+        num_agents = num_dragon+self.num_l_anim+self.num_s_anim
         world.num_agents = num_agents
 
         num_adversaries = num_dragon
@@ -28,9 +54,9 @@ class Scenario(BaseScenario):
         for i, agent in enumerate(world.agents):
             if i<num_dragon:
                 world.set_dragon(i)
-            elif i<num_dragon+num_l_anim:
+            elif i<num_dragon+self.num_l_anim:
                 world.set_l(i)
-            elif i<num_dragon+num_l_anim+num_s_anim:
+            elif i<num_dragon+self.num_l_anim+self.num_s_anim:
                 world.set_s(i)
             agent.silent = True
         # add landmarks
@@ -54,9 +80,9 @@ class Scenario(BaseScenario):
         for i, agent in enumerate(world.agents):
             if i<num_dragon:
                 world.set_dragon(i)
-            elif i<num_dragon+num_l_anim:
+            elif i<num_dragon+self.num_l_anim:
                 world.set_l(i)
-            elif i<num_dragon+num_l_anim+num_s_anim:
+            elif i<num_dragon+self.num_l_anim+self.num_s_anim:
                 world.set_s(i)
             agent.silent = True
         # random properties for landmarks
@@ -138,7 +164,7 @@ class Scenario(BaseScenario):
                 adv_rew += 5
             return adv_rew
         """
-        return agent.fat-dis(agent.base_pos-agent.state.p_pos)
+        return agent.mass+agent.fat-dis(agent.base_pos-agent.state.p_pos)*agent.mass
 
     def observation(self, agent, world):
         # get positions of all entities in this agent's reference frame
@@ -154,20 +180,17 @@ class Scenario(BaseScenario):
         for entity in world.landmarks:
             entity_color.append(entity.color)
         # communication of all other agents
-        other_pos = []
+        large_n=0
+        small_n=0
         for other in world.agents:
             if other is agent: continue
-            other_pos.append(other.state.p_pos - agent.state.p_pos)
-        if agent.adversary:
-            all=entity_pos + other_pos
-            observed_pos=[agent.state.p_pos]
-            for pos in all:
-                if dis(pos)<flight_horizon:
-                    observed_pos.append(pos)
-            return observed_pos
-        else:
-            all=[agent.state.p_pos]
-            all=all
-            return all
+            #print(other.name," ",other.state.p_pos," <-> ",agent.state.p_pos)
+            if dis(other.state.p_pos - agent.state.p_pos)<agent.horizon:
+                if "large" in other.name:
+                    large_n+=1
+                else:
+                    small_n+=1
+        return [large_n,small_n]
+
 def dis(a):
     return sqrt(a[0]*a[0]+a[1]*a[1])
