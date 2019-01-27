@@ -1,0 +1,21 @@
+from make_env import make_env
+from random import random
+env=make_env('dragon')
+obs=env.reset()
+num_agents=env.n
+num_eps=100
+max_act_num=100
+def gene_action(agent_id,seed):
+    action=[0 for i in range(env.action_space[agent_id]]
+    action[seed]=1
+    return action
+
+for i_iter in range(num_eps):
+    for _ in range(max_act_num):
+        actions=[]
+        for agent_id in range(num_agents):
+            seed=min(0,int(random()*5)-1)
+            action=gene_action(agent_id,seed)
+            actions.append(action)
+        obs,rew,done_s,info=env.step(actions)
+        env.render()

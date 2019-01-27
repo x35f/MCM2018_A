@@ -1,11 +1,19 @@
 import gym
+from math import sqrt
 from gym import spaces
 from gym.envs.registration import EnvSpec
+from multiagent.core import Agent
 import numpy as np
 from multiagent.multi_discrete import MultiDiscrete
-
+from random import random,randint
 # environment for all agents in the multiagent world
 # currently code assumes that no agents will be created/destroyed at runtime!
+def dis(a,b):
+    dx=a[0]-b[0]
+    dy=a[1]-b[1]
+    return sqrt(dx*dx+dy*dy)
+s_birth_prob=0.01 #by group of a hundred
+l_birth_prob=0.001 #by group of a hundred
 class MultiAgentEnv(gym.Env):
     metadata = {
         'render.modes' : ['human', 'rgb_array']
@@ -14,11 +22,16 @@ class MultiAgentEnv(gym.Env):
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
                  done_callback=None, shared_viewer=True):
-
+        self.step_count=0
         self.world = world
         self.agents = self.world.policy_agents
+        self.num_l=0
+        self.num_s=0
         # set required vectorized gym env property
         self.n = len(world.policy_agents)
+        self.n_dragon=0
+        self.n_l=0
+        self.n_s=0
         # scenario callbacks
         self.reset_callback = reset_callback
         self.reward_callback = reward_callback
@@ -39,10 +52,20 @@ class MultiAgentEnv(gym.Env):
         self.action_space = []
         self.observation_space = []
         for agent in self.agents:
+            if "dragon" in agent.name:
+                self.n_dragon+=1
+            elif "large" in agent.name:
+                self.n_l+=1
+            else:
+                self.n_s+=1
             total_action_space = []
             # physical action space
+
             if self.discrete_action_space:
-                u_action_space = spaces.Discrete(world.dim_p * 2 + 1)
+                if agent.adversary:
+                    u_action_space = spaces.Discrete(world.dim_p * 2 + 1+1)
+                else:
+                    u_action_space = spaces.Discrete(world.dim_p * 2 + 1)
             else:
                 u_action_space = spaces.Box(low=-agent.u_range, high=+agent.u_range, shape=(world.dim_p,), dtype=np.float32)
             if agent.movable:
@@ -75,33 +98,149 @@ class MultiAgentEnv(gym.Env):
             self.viewers = [None]
         else:
             self.viewers = [None] * self.n
+        self.changed_in_step=True
         self._reset_render()
 
+    @property
+    def dragon(self):
+        return self.agents[0]
+    def gene_rand_actions():
+        add_actions=[]
+
+    def record_dragon_init_state(self):
+        self.dragon_init_home_range=self.dragon.home_range
+        self.d_mass=0.0
+    def gene_random_actions(self):
+        actions=[]
+        for i in range(self.n):
+            action=[0 for i in range(5)]
+            action[randint(0,4)]=1
+            actions.append(action)
+        return actions
+
     def step(self, action_n):
+        self.step_count+=1
+        action_n=[action_n]
+
+        action_n=action_n+self.gene_random_actions()
+        self.record_dragon_init_state()
         obs_n = []
         reward_n = []
         done_n = []
         info_n = {'n': []}
+        self.changed_in_step=False
         self.agents = self.world.policy_agents
         # set action for each agent
         for i, agent in enumerate(self.agents):
+            #print(len(self.agents)," ",len(action_n)," ",len(self.action_space))
             self._set_action(action_n[i], agent, self.action_space[i])
         # advance world state
         self.world.step()
+        self.changed_in_step=False
+        if self.agents[0].adversary:
+            if action_n[0][5]==1:
+                self.hunt_step()
         # record observation for each agent
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
             reward_n.append(self._get_reward(agent))
             done_n.append(self._get_done(agent))
-
-            info_n['n'].append(self._get_info(agent))
-
+            if "dragon" in agent.name:
+                #print("Dragon id",self.agents.index(agent))
+                info_n['mass']=agent.quality
+                info_n['fat']=agent.fat
         # all agents get total reward in cooperative case
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [reward] * self.n
+        self.growth_step()
 
+        self.world_update()
         return obs_n, reward_n, done_n, info_n
+
+
+    def growth_step(self):
+        s_seed=random()
+        if s_seed<s_birth_prob:
+            self.world.agents.append(Agent())
+            self.world.set_s(len(self.world.agents)-1)
+            #print(tn," -> ",len(self.w))
+            self.agents.append(self.world.agents[len(self.world.agents)-1])
+            self.action_space.append(self.new_act_space())
+            self.changed_in_step=True
+
+        l_seed=random()
+        if l_seed<l_birth_prob:
+            self.world.agents.append(Agent())
+            self.world.set_l(len(self.world.agents)-1)
+            self.agents.append(self.world.agents[len(self.world.agents)-1])
+            self.action_space.append(self.new_act_space())
+            self.changed_in_step=True
+
+    def world_update(self):
+        self.world.entites=[]
+        for agent in self.agents:
+            self.n_dragon=0
+            self.n_l=0
+            self.n_s=0
+            if "dragon" in agent.name:
+                self.n_dragon+=1
+            elif "large" in agent.name:
+                self.n_l+=1
+            else:
+                self.n_s+=1
+            self.world.entites.append(agent)
+        for landmark in self.world.landmarks:
+            self.world.entities.append(landmark)
+        self.world.num_agents=len(self.agents)
+        self.n=self.world.num_agents
+        """if self.changed_in_step:
+            print(len(self.agents)," ",len(self.world.agents))"""
+        """update dragon property"""
+        self.dragon_state_update()
+        self.environment_update()
+
+    def dragon_state_update(self):
+        if self.step_count%20 ==0:
+            self.d_mass-=self.dragon.regular_energy_cost
+        #self.dragon.mass
+        d_mass=self.d_mass*self.dragon.convert_perc
+        #print("mass:",self.dragon.mass)
+        self.dragon.quality+=d_mass
+        self.dragon.fat+=d_mass*self.dragon.convert_fat_perc
+        #self.dragon.home_range=
+
+
+    def environment_update(self):
+        return
+
+    def hunt_step(self):
+        #print("hunting")
+        self.d_mass-=self.agents[0].hunt_energy_cost
+        hunt_pos=self.agents[0].state.p_pos
+        closest_agent_id=-1
+        closest_dis=self.agents[0].hunt_range
+        for i,agent in enumerate(self.agents):
+            if i>1:
+                dist=dis(hunt_pos,agent.state.p_pos)
+                if closest_dis>dist:
+                    closest_agent_id=i
+                    closest_dis=dist
+        if closest_agent_id!=-1:
+            self.eat_agent(closest_agent_id)
+
+
+    def eat_agent(self,agent_id):
+        seed=random()
+        if seed<self.agents[agent_id].eaten_prob:
+            self.d_mass+=self.agents[agent_id].biomas
+            del self.agents[agent_id]
+            del self.world.agents[agent_id]
+            del self.action_space[agent_id]
+            self.changed_in_step=True
+            #print(len(self.agents))
+
+
 
     def reset(self):
         # reset world
@@ -113,13 +252,15 @@ class MultiAgentEnv(gym.Env):
         self.agents = self.world.policy_agents
         for agent in self.agents:
             obs_n.append(self._get_obs(agent))
+        base_pos=[agent.base_pos for agent in self.agents]
         return obs_n
 
     # get info used for benchmarking
     def _get_info(self, agent):
-        if self.info_callback is None:
-            return {}
+        if self.info_callback==None:
+            return None
         return self.info_callback(agent, self.world)
+
 
     # get observation for a particular agent
     def _get_obs(self, agent):
@@ -140,6 +281,12 @@ class MultiAgentEnv(gym.Env):
             return 0.0
         return self.reward_callback(agent, self.world)
 
+    def new_act_space(self):
+        total_action_space = []
+        u_act_space=spaces.Discrete(self.world.dim_p*2+1)
+        total_action_space.append(u_act_space)
+        return MultiDiscrete([[0, act_space.n - 1] for act_space in total_action_space])
+
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):
         agent.action.u = np.zeros(self.world.dim_p)
@@ -155,7 +302,7 @@ class MultiAgentEnv(gym.Env):
             action = act
         else:
             action = [action]
-
+        #print("transferred action",action)
         if agent.movable:
             # physical action
             if self.discrete_action_input:
@@ -210,7 +357,7 @@ class MultiAgentEnv(gym.Env):
                     else:
                         word = alphabet[np.argmax(other.state.c)]
                     message += (other.name + ' to ' + agent.name + ': ' + word + '   ')
-            print(message)
+            #print(message)
 
         for i in range(len(self.viewers)):
             # create viewers (if necessary)
@@ -218,10 +365,11 @@ class MultiAgentEnv(gym.Env):
                 # import rendering only if we need it (and don't import for headless machines)
                 #from gym.envs.classic_control import rendering
                 from multiagent import rendering
-                self.viewers[i] = rendering.Viewer(700,700)
+                self.viewers[i] = rendering.Viewer(1200,1200)
 
         # create rendering geometry
-        if self.render_geoms is None:
+        if True:
+            #recreate anyway
             # import rendering only if we need it (and don't import for headless machines)
             #from gym.envs.classic_control import rendering
             from multiagent import rendering
@@ -319,6 +467,8 @@ class BatchMultiAgentEnv(gym.Env):
             # reward = [r / len(self.env_batch) for r in reward]
             reward_n += reward
             done_n += done
+
+
         return obs_n, reward_n, done_n, info_n
 
     def reset(self):
