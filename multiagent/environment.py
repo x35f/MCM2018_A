@@ -8,6 +8,7 @@ from multiagent.multi_discrete import MultiDiscrete
 from random import random,randint
 import random
 from enum import Enum
+from time import time
 # environment for all agents in the multiagent world
 # currently code assumes that no agents will be created/destroyed at runtime!
 def dis(a,b):
@@ -15,8 +16,6 @@ def dis(a,b):
     dy=a[1]-b[1]
     return sqrt(dx*dx+dy*dy)
 
-s_birth_prob=0.01 #by group of a hundred
-l_birth_prob=0.001 #by group of a hundred
 
 day_step=100
 
@@ -24,8 +23,8 @@ class ENV_TYPE(Enum):
     Arctic=1
     Arid=2
     Temperate=3
+    Model=4
 
-env_type=ENV_TYPE.Arctic
 
 class MultiAgentEnv(gym.Env):
     metadata = {
@@ -114,6 +113,13 @@ class MultiAgentEnv(gym.Env):
         self.changed_in_step=True
         self.act_space=self.action_space[0]
         self.obs_space=self.observation_space[0]
+        self.dragon_init_home_range=self.dragon.home_range
+        self.d_mass=0.0
+        self.d_fat=0.0
+        self.hunt_attempts=0
+        self.fire_attempts=0
+        self.l_eaten=0
+        self.s_eaten=0
         self._reset_render()
 
     @property
@@ -126,6 +132,10 @@ class MultiAgentEnv(gym.Env):
         self.dragon_init_home_range=self.dragon.home_range
         self.d_mass=0.0
         self.d_fat=0.0
+        self.hunt_attempts=0
+        self.fire_attempts=0
+        self.l_eaten=0
+        self.s_eaten=0
     def gene_random_actions(self):
         actions=[]
         for i in range(self.n):
@@ -133,50 +143,55 @@ class MultiAgentEnv(gym.Env):
             action[randint(0,4)]=1
             actions.append(action)
         return actions
+    def tick(self):
+        self.start=time()
+    def tock(self,mes):
+        #print(mes," elapsed time:",time()-self.start)
+        self.start=time()
 
     def step(self, action):
+        self.tick()
         self.step_count+=1
-        self.record_dragon_init_state()
+        #self.record_dragon_init_state()
         if action[0]==1:
             self.d_fat-=self.dragon.stationary_cost/day_step
+            #print("stationary_cost:",self.d_fat,self.d_fat*day_step)
         else:
             self.d_fat-=self.dragon.patrol_cost/day_step
-        action_n=[action]
-
-        action_n=action_n+self.gene_random_actions()
-
+            #print("moving_cost:",self.d_fat,self.d_fat*day_step)
         info = {'n': []}
         self.changed_in_step=False
-        self.agents = self.world.policy_agents
+        self.tock("wtf")
         # set action for each agent
-        for i, agent in enumerate(self.agents):
-            #print(len(self.agents)," ",len(action_n)," ",len(self.action_space))
-            self._set_action(action_n[i], agent, self.action_space[i])
+        self._set_action(action, self.dragon, self.action_space[0])
+        self.tock("set action")
         # advance world state
         self.world.step()
+        self.tock('world step')
         self.changed_in_step=False
-        if self.agents[0].adversary:
-            if action_n[0][5]==1:
-                self.hunt_step()
+        if action[5]==1:
+            self.hunt_step()
         # record observation for each agent
-
+        self.tock("hunt_step")
         # all agents get total reward in cooperative case
         obs=self._get_obs(self.dragon)
         rew=self._get_reward(self.dragon)
         done=self._get_done(self.dragon)
-        self.growth_step()
-        self.world_update()
         info['mass']=self.dragon.quality
         info['fat']=self.dragon.fat
-        info['large_n']=self.n_l
-        info['small_n']=self.n_s
-        info['daily_income']=self.dragon.daily_income
+        info['large']=self.n_l
+        info['small']=self.n_s
+        info['intake']=self.dragon.daily_income
         info['home_range']=self.dragon.home_range
+        self.tock("get info")
+        self.world_update()
+        self.tock("update")
+        #print("\n\n")
         return obs, rew, done, info
 
     def new_l_agent(self):
         self.world.agents.append(Agent())
-        self.world.set_s(len(self.world.agents)-1)
+        self.world.set_l(len(self.world.agents)-1)
         #print(tn," -> ",len(self.w))
         self.agents.append(self.world.agents[len(self.world.agents)-1])
         self.action_space.append(self.new_act_space())
@@ -186,83 +201,29 @@ class MultiAgentEnv(gym.Env):
         self.agents.append(self.world.agents[len(self.world.agents)-1])
         self.action_space.append(self.new_act_space())
 
-    def growth_step(self):
-        s_seed=random.random()
-        if s_seed<s_birth_prob:
-            self.new_s_agent()
-            self.changed_in_step=True
-
-        l_seed=random.random()
-        if l_seed<l_birth_prob:
-            self.new_l_agent()
-            self.changed_in_step=True
 
     def world_update(self):
 
         """if self.changed_in_step:
             print(len(self.agents)," ",len(self.world.agents))"""
-        """update dragon property"""
-        self.dragon_state_update()
-        self.environment_update()
 
-    def dragon_state_update(self):
-        #self.dragon.mass
-
-        self.dragon.daily_income-=self.d_mass
-        d_mass=self.d_mass*self.dragon.convert_perc
-        self.dragon.fat+=self.d_fat
-        #print("mass:",self.dragon.mass)
-        self.dragon.quality+=d_mass
-        self.dragon.fat+=d_mass*self.dragon.convert_fat_perc
-        m=self.dragon.quality
-        self.dragon.hunt_cost=0.05*m
-        self.dragon.patrol_cost=1.2*(m**0.22)
-        self.dragon.stationary_cost=0.0045*(m**0.75)
-        self.dragon.hunt_energy_cost=0.05*self.dragon.fat
-        self.dragon.fire_cost=self.dragon.hunt_energy_cost
-        self.dragon.exp_income=0.0045*(m**0.75)+1.2*(m**0.22)+0.05*m
-        self.dragon.horizon=1.07*(m**0.68)
-
-
-    def environment_update(self):
-        #reset some parameters after a day
+        """per day update"""
         if self.step_count%day_step ==0:
-            #daily update for new_range income
-            #print("reset to ",self.dragon.exp_income)
-            self.dragon.daily_income=self.dragon.exp_income
-            self.step_count=1
-            prev_home_range=self.dragon.home_range
-            self.world.set_dragon_home_range()
-            d_range=self.dragon.home_range-prev_home_range
-            d_l_num=int(d_range*self.world.dens_l_anim)
-            d_s_num=int(d_range*self.world.dens_s_anim)
-            #print("New in sight:",d_l_num," ",d_s_num)
-            for i in range(d_l_num):
-                self.new_l_agent()
-            for i in range(d_s_num):
-                self.new_s_agent()
-            #daily update for new born animals
-            growth_seed=random.random()
-            ds=self.world.dens_l_anim*self.dragon.home_range
-            n=self.n_l
-            prob=self.world.l_growth_coef*(ds-n)/(ds*day_step)
-            if growth_seed<prob:
-                print("born l agent")
-                self.new_l_agent()
-            growth_seed=random.random()
-            dl=self.world.dens_s_anim*self.dragon.home_range
-            n=self.n_s
-            prob=self.world.s_growth_coef*(ds-n)/(ds*day_step)
-            if growth_seed<prob:
-                print("born s agent")
-                self.new_s_agent()
+            print("hunt_attempt: {}\tfire_attempt: {}\teat_large: {}\teat_s: {}\t home_range:{:.2f}".format(
+            self.hunt_attempts,self.fire_attempts,self.l_eaten,self.s_eaten,self.dragon.home_range
+            ))
+            self.dragon_state_update()
+            self.environment_update()
+            self.record_dragon_init_state()
+        """per time step update"""
+        self.anim_update()
 
+    def anim_update(self):
         self.world.entites=[]
         self.n_dragon=0
         self.n_l=0
         self.n_s=0
         for agent in self.agents:
-
             if "dragon" in agent.name:
                 self.n_dragon+=1
             elif "large" in agent.name:
@@ -276,58 +237,133 @@ class MultiAgentEnv(gym.Env):
         self.world.num_agents=len(self.agents)
         self.n=self.world.num_agents
 
+    def dragon_state_update(self):
+        #self.dragon.mass
+        self.dragon.daily_income=self.dragon.exp_income
+        d_mass=self.d_mass*self.dragon.convert_perc
+        #print(d_mass," ",self.d_mass)
+        self.dragon.fat+=self.d_fat
+        #print("mass:",self.dragon.mass)
+        self.dragon.quality+=d_mass
+        self.dragon.quality=min(self.dragon.max_mass,self.dragon.quality)
+        self.dragon.fat+=d_mass*self.dragon.convert_fat_perc
+        m=self.dragon.quality
+        self.dragon.patrol_cost=1.2*(m**0.22)
+        self.dragon.stationary_cost=0.0045*(m**0.75)
+        self.dragon.hunt_energy_cost=0.05*m*0.07
+        self.dragon.fire_cost=self.dragon.hunt_energy_cost
+        self.dragon.exp_income=0.0045*(m**0.75)+1.2*(m**0.22)+0.25*m
+        self.dragon.horizon=0.25*(m**0.22)/self.dragon.home_radius
+        self.dragon.velocity=57.6*(m**0.13)
+        self.world.damping=0.5 if m >200 else 0.25
+
+
+    def environment_update(self):
+        #reset some parameters after a day
+        prev_home_range=self.dragon.home_range
+        self.world.set_dragon_home_range()
+        d_range=self.dragon.home_range-prev_home_range
+        d_l_num=(d_range*self.world.dens_l_anim)
+        d_s_num=(d_range*self.world.dens_s_anim)
+        if d_range>0:
+            print(d_range, "\033[32m New in sight:\033[0m",int(d_l_num)," ",int(d_s_num))
+        if d_l_num>1.0:
+            for i in range(int(d_l_num)-1):
+                self.new_l_agent()
+            else:
+                d_l_seed=random.random()/2.0
+                if d_l_seed<d_l_num:
+                    self.new_l_agent()
+        if d_s_num>1.0:
+            for i in range(int(d_s_num)-1):
+                self.new_s_agent()
+            else:
+                d_s_seed=random.random()/2.0
+                if d_s_seed<d_s_num:
+                    self.new_s_agent()
+        #daily update for new born animals
+        growth_seed=random.random()
+        self.anim_update()
+        ds=self.world.dens_l_anim*self.dragon.home_range
+        n=self.n_l
+        prob=n*self.world.l_growth_coef*(ds-n)/(ds)
+        #print("curr l_dens:",n/self.dragon.home_range, "\texp:",self.world.dens_l_anim)
+        #print(self.dragon.home_range," large  ",prob)
+        if prob>1.0:
+            for i in range(int(prob)):
+                self.new_l_agent()
+        elif growth_seed<prob:
+            #print("born l agent")
+            self.new_l_agent()
+        growth_seed=random.random()
+        ds=self.world.dens_s_anim*self.dragon.home_range
+        n=self.n_s
+        prob=n*self.world.s_growth_coef*(ds-n)/(ds)
+        #print(self.dragon.home_range," small  ",prob)
+        #print("curr s_dens:",n/self.dragon.home_range, "\texp:",self.world.dens_s_anim)
+        if prob>1.0:
+            for i in range(int(prob)):
+                self.new_s_agent()
+        elif growth_seed<prob:
+            #print("born l agent")
+            self.new_s_agent()
+
+
     def hunt_step(self):
         #print("hunting with range",self.dragon.horizon)
-        self.d_fat-=self.agents[0].hunt_energy_cost
-        hunt_pos=self.agents[0].state.p_pos
+        self.hunt_attempts+=1
+        self.d_fat-=self.dragon.hunt_energy_cost
+        hunt_pos=self.dragon.state.p_pos
         closest_l_agent_id=-1
         closest_s_agent_id=-1
         closest_l_dis=self.dragon.horizon
         closest_s_dis=self.dragon.horizon
-        for i,agent in enumerate(self.agents):
+        #larges=[]
+        #smalls=[]
+        for i,agent in enumerate(self.world.agents):
             if i>=1:
                 dist=dis(hunt_pos,agent.state.p_pos)
-                if "large" in agent.name and self.dragon.quality>self.world.l_biomas:
-                    if closest_l_dis>dist:
-                        closest_l_agent_id=i
-                        closest_l_dis=dist
-                if "small" in agent.name:
-                    if closest_s_dis>dist:
-                        closest_s_agent_id=i
-                        closest_s_dis=dist
+                if dist<self.dragon.horizon:
+                    if "large" in agent.name and self.dragon.quality>self.world.l_biomas*0.3:
+                        if closest_l_dis>dist:
+                            closest_l_agent_id=i
+                            closest_l_dis=dist
+                            #larges.append(agent.name)
+                    if "small" in agent.name:
+                        if closest_s_dis>dist:
+                            closest_s_agent_id=i
+                            closest_s_dis=dist
+                            #smalls.append(agent.name)
+        #print("hunting",' ',larges,' ',smalls)
         if closest_l_agent_id!=-1:
             self.eat_agent(closest_l_agent_id)
         elif closest_s_agent_id!=-1:
-            self.eat_agent(closest_l_agent_id)
+            self.eat_agent(closest_s_agent_id)
         else:
-            raise NotImplementedError("No agent to hunt")
+            self.d_fat+=self.dragon.hunt_energy_cost
 
 
     def eat_agent(self,agent_id):
         seed=random.random()
-        #print("prob:",self.agents[agent_id].eaten_prob)
         fire=random.choice([False,True])
-        if fire:
-            self.d_fat-=self.dragon.fire_cost
-            if seed<self.agents[agent_id].eaten_prob:
-                #print("eat large agent",self.agents[agent_id].name)
-                self.d_mass+=self.world.l_biomas
-                del self.agents[agent_id]
-                del self.world.agents[agent_id]
-                del self.action_space[agent_id]
-                self.changed_in_step=True
-                #print(len(self.agents))
-        else:
-            if seed<self.agents[agent_id].fire_eaten_prob:
-                #print("biomas=",self.agents[agent_id].biomas)
-                #print("eat small agent",self.agents[agent_id].name)
-                self.d_mass+=self.world.s_biomas
-                del self.agents[agent_id]
-                del self.world.agents[agent_id]
-                del self.action_space[agent_id]
-                self.changed_in_step=True
-                #print(len(self.agents))
-
+        eat_mass=0.0
+        self.fire_attempts+=1
+        #self.d_fat-=self.dragon.fire_cost
+        if seed<self.world.hunt_success_prob:
+            #print("eat large agent",self.agents[agent_id].name)
+            if "large" in self.agents[agent_id].name:
+                eat_mass=self.world.l_biomas
+                self.l_eaten+=1
+            elif "small" in self.agents[agent_id].name:
+                eat_mass=self.world.s_biomas
+                self.s_eaten+=1
+            del self.agents[agent_id]
+            del self.world.agents[agent_id]
+            del self.action_space[agent_id]
+            self.changed_in_step=True
+            self.dragon.daily_income-=eat_mass
+            #print('eaten ',eat_mass, self.dragon.daily_income)
+            self.d_mass+=eat_mass
 
 
     def reset(self):
@@ -336,12 +372,7 @@ class MultiAgentEnv(gym.Env):
         # reset renderer
         self._reset_render()
         # record observations for each agent
-        obs_n = []
-        self.agents = self.world.policy_agents
-        for agent in self.agents:
-            obs_n.append(self._get_obs(agent))
-        base_pos=[agent.base_pos for agent in self.agents]
-        return obs_n
+        return self._get_obs(self.dragon)
 
     # get info used for benchmarking
     def _get_info(self, agent):

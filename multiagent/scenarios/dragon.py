@@ -7,7 +7,7 @@ num_dragon=1
 num_l_anim=0
 num_s_anim=0
 num_tree=0
-num_home=1
+num_home=0
 num_agents=0
 flight_horizon=0.1
 ground_horizon=0.1
@@ -26,14 +26,19 @@ class Scenario(BaseScenario):
         elif env_type==ENV_TYPE.Arid:
             self.dens_l_anim=0.019
             self.dens_s_anim=0.3
-            range_coef=3961
+            range_coef=0.3961
         elif env_type==ENV_TYPE.Temperate:
             self.dens_l_anim=0.862
             self.dens_s_anim=3.4
-            range_coef=0.01
+            range_coef=0.005
+        elif env_type==ENV_TYPE.Model:
+            self.dens_l_anim=0.457
+            self.dens_s_anim=1.567
+            range_coef=0.4
         else:
             raise NotImplementedError("Not implemented environment")
         init_home_range=range_coef*(dragon_init_quality**1.8)
+        #print("init home range: ",init_home_range)
         self.num_l_anim=int(init_home_range*self.dens_l_anim)
         self.num_s_anim=int(init_home_range*self.dens_s_anim)
         #print("init l:",num_l_anim,"\ts:",num_s_anim)
@@ -92,15 +97,9 @@ class Scenario(BaseScenario):
         for i, landmark in enumerate(world.landmarks):
             landmark.color = np.array([0.0, 0.15, 0.0])
         # set goal landmark
-        goal =world.landmarks[num_tree]
-        goal.color = np.array([0.9,0.9 ,0.9])
-        for agent in world.agents:
-            agent.goal_a = goal
         for i, landmark in enumerate(world.landmarks):
             landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
-        goal.state.p_pos=np.array([0.0,0.0])
-        goal.state.p_vel = np.zeros(world.dim_p)
     def benchmark_data(self, agent, world):
         # returns data for benchmarking purposes
         if agent.adversary:
@@ -126,50 +125,17 @@ class Scenario(BaseScenario):
 
     def agent_reward(self, agent, world):
         # Rewarded based on how close any good agent is to the goal landmark, and how far the adversary is from it
-        """shaped_reward = True
-        shaped_adv_reward = True
 
-        # Calculate negative reward for adversary
-        adversary_agents = self.adversaries(world)
-        if shaped_adv_reward:  # distance-based adversary reward
-            adv_rew = sum([np.sqrt(np.sum(np.square(a.state.p_pos - a.goal_a.state.p_pos))) for a in adversary_agents])
-        else:  # proximity-based adversary reward (binary)
-            adv_rew = 0
-            for a in adversary_agents:
-                if np.sqrt(np.sum(np.square(a.state.p_pos - a.goal_a.state.p_pos))) < 2 * a.goal_a.size:
-                    adv_rew -= 5
-
-        # Calculate positive reward for agents
-        good_agents = self.good_agents(world)
-        if shaped_reward:  # distance-based agent reward
-            pos_rew = -min(
-                [np.sqrt(np.sum(np.square(a.state.p_pos - a.goal_a.state.p_pos))) for a in good_agents])
-        else:  # proximity-based agent reward (binary)
-            pos_rew = 0
-            if min([np.sqrt(np.sum(np.square(a.state.p_pos - a.goal_a.state.p_pos))) for a in good_agents]) \
-                    < 2 * agent.goal_a.size:
-                pos_rew += 5
-            pos_rew -= min(
-                [np.sqrt(np.sum(np.square(a.state.p_pos - a.goal_a.state.p_pos))) for a in good_agents])
-        return pos_rew + adv_rew"""
         return -dis(agent.base_pos-agent.state.p_pos)
 
     def adversary_reward(self, agent, world):
         # Rewarded based on proximity to the goal landmark"
-        """
-        shaped_reward = True
-        if shaped_reward:  # distance-based reward
-            return -np.sum(np.square(agent.state.p_pos - agent.goal_a.state.p_pos))
-        else:  # proximity-based reward (binary)
-            adv_rew = 0
-            if np.sqrt(np.sum(np.square(agent.state.p_pos - agent.goal_a.state.p_pos))) < 2 * agent.goal_a.size:
-                adv_rew += 5
-            return adv_rew
-        """
+
         return agent.mass+agent.fat-dis(agent.base_pos-agent.state.p_pos)*agent.mass
 
     def observation(self, agent, world):
         # get positions of all entities in this agent's reference frame
+
         entity_pos = []
         home_pos=[]
         for i,entity in enumerate(world.landmarks):
@@ -184,14 +150,20 @@ class Scenario(BaseScenario):
         # communication of all other agents
         large_n=0
         small_n=0
+        #larges=[]
+        #smalls=[]
         for other in world.agents:
             if other is agent: continue
             #print(other.name," ",other.state.p_pos," <-> ",agent.state.p_pos)
             if dis(other.state.p_pos - agent.state.p_pos)<agent.horizon:
-                if "large" in other.name and agent.quality>world.l_biomas:
+                if "large" in other.name and agent.quality>world.l_biomas*0.3:
                     large_n+=1
-                else:
+                    #larges.append(other.name)
+                elif 'small' in other.name:
                     small_n+=1
+                    #smalls.append(other.name)
+        #if large_n+small_n>0:
+            #print('obs',' ',larges,' ',smalls)
         return [large_n,small_n]
 
 def dis(a):
