@@ -203,7 +203,7 @@ class World(object):
             self.s_abs_radius=14.93
             self.l_biomas=340
             self.s_biomas=27
-            self.home_range_coef=0.005
+            self.home_range_coef=0.08
             self.l_growth_coef=0.0054
             self.s_growth_coef=0.022
             self.hunt_success_prob=0.75
@@ -214,7 +214,7 @@ class World(object):
             self.s_abs_radius=2.82
             self.l_biomas=360
             self.s_biomas=22
-            self.home_range_coef=0.4
+            self.home_range_coef=0.05
             self.l_growth_coef=0.0082
             self.s_growth_coef=0.0219
             self.hunt_success_prob=0.75
