@@ -173,7 +173,7 @@ class World(object):
         return [agent for agent in self.agents if agent.action_callback is not None]
 
     # update state of the world
-    def set_env(self,env_type):
+    def set_env(self,env_type,args):
         if env_type==ENV_TYPE.Arctic:
             self.dens_l_anim=0.49
             self.dens_s_anim=1.0
@@ -218,13 +218,21 @@ class World(object):
             self.l_growth_coef=0.0082
             self.s_growth_coef=0.0219
             self.hunt_success_prob=0.75
+
+            self.step_length_coef=19.2
         else:
             raise NotImplementedError("Not implemented environment")
+        self.max_home_range=33141
+        self.home_range_coef=max(args.range_coef,self.home_range_coef)
+        self.max_home_range=max(args.max_home_range,self.max_home_range)
+        self.dens_l_anim=max(args.l_density,self.dens_l_anim)
+        self.dens_s_anim=max(args.s_density,self.dens_s_anim)
         #self.set_dragon_home_range(dragon_init_quality)
 
     def set_dragon_home_range(self):
         m=self.dragon.quality
         self.agents[0].home_range=self.home_range_coef*(m**1.8)
+        self.agents[0].home_range=min(self.max_home_range,self.agents[0].home_range)
         #print("m:" ,m , 'range:',self.agents[0].home_range)
         self.agents[0].home_radius=sqrt(self.dragon.home_range/3.14)
         #print("init range:", self.dragon_home_range,"\t radius:",self.dragon_home_radius)

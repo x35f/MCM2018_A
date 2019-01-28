@@ -13,41 +13,52 @@ flight_horizon=0.1
 ground_horizon=0.1
 
 
-env_type=ENV_TYPE.Temperate
+env_type=ENV_TYPE.Model
 dragon_init_quality=40
 
 
 class Scenario(BaseScenario):
-    def set_env(self,env_type,world):
+    def set_env(self,env_type,world,args):
         if env_type==ENV_TYPE.Arctic:
             self.dens_l_anim=0.449
             self.dens_s_anim=1.0
-            range_coef=0.0136
+            self.range_coef=0.0136
         elif env_type==ENV_TYPE.Arid:
             self.dens_l_anim=0.019
             self.dens_s_anim=0.3
-            range_coef=0.3961
+            self.range_coef=0.3961
         elif env_type==ENV_TYPE.Temperate:
             self.dens_l_anim=0.862
             self.dens_s_anim=3.4
-            range_coef=0.005
+            self.range_coef=0.005
         elif env_type==ENV_TYPE.Model:
             self.dens_l_anim=0.457
             self.dens_s_anim=1.567
-            range_coef=0.4
+            self.range_coef=0.4
         else:
             raise NotImplementedError("Not implemented environment")
-        init_home_range=range_coef*(dragon_init_quality**1.8)
+        self.dens_l_anim=max(args.l_density, self.dens_l_anim)
+        self.dens_s_anim=max(args.s_density,self.dens_s_anim)
+        self.range_coef=max(args.range_coef,self.range_coef)
+        init_home_range=self.range_coef*(args.mass**1.8)
         #print("init home range: ",init_home_range)
         self.num_l_anim=int(init_home_range*self.dens_l_anim)
         self.num_s_anim=int(init_home_range*self.dens_s_anim)
         #print("init l:",num_l_anim,"\ts:",num_s_anim)
-
-    def make_world(self):
+    def check_args(self,args,world):
+        assert(self.range_coef==args.range_coef)
+        assert(world.home_range_coef==args.range_coef)
+        assert(self.dens_l_anim==args.l_density)
+        assert(self.dens_s_anim==args.s_density)
+        assert(world.dens_l_anim==args.l_density)
+        assert(world.dens_s_anim==args.s_density)
+        assert(world.max_home_range==args.max_home_range)
+    def make_world(self,args):
         world = World()
-        world.set_env(env_type)
-        self.set_env(env_type,world)
-
+        env_type=ENV_TYPE[args.env]
+        world.set_env(env_type,args)
+        self.set_env(env_type,world,args)
+        #self.check_args(args,world)
         # set any world properties first
         world.dim_c = 2
         #print("init l:",num_l_anim,"\ts:",num_s_anim)

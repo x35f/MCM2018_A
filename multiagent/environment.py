@@ -209,9 +209,9 @@ class MultiAgentEnv(gym.Env):
 
         """per day update"""
         if self.step_count%day_step ==0:
-            print("hunt_attempt: {}\tfire_attempt: {}\teat_large: {}\teat_s: {}\t home_range:{:.2f}".format(
-            self.hunt_attempts,self.fire_attempts,self.l_eaten,self.s_eaten,self.dragon.home_range
-            ))
+            #nt_attempt: {}\tfire_attempt: {}\teat_large: {}\teat_s: {}\t home_range:{:.2f}".format(
+            #self.hunt_attempts,self.fire_attempts,self.l_eaten,self.s_eaten,self.dragon.home_range
+            #))
             self.dragon_state_update()
             self.environment_update()
             self.record_dragon_init_state()
@@ -243,6 +243,7 @@ class MultiAgentEnv(gym.Env):
         d_mass=self.d_mass*self.dragon.convert_perc
         #print(d_mass," ",self.d_mass)
         self.dragon.fat+=self.d_fat
+        self.fat=min(self.dragon.quality/2,self.dragon.fat)
         #print("mass:",self.dragon.mass)
         self.dragon.quality+=d_mass
         self.dragon.quality=min(self.dragon.max_mass,self.dragon.quality)
@@ -265,8 +266,8 @@ class MultiAgentEnv(gym.Env):
         d_range=self.dragon.home_range-prev_home_range
         d_l_num=(d_range*self.world.dens_l_anim)
         d_s_num=(d_range*self.world.dens_s_anim)
-        if d_range>0:
-            print(d_range, "\033[32m New in sight:\033[0m",int(d_l_num)," ",int(d_s_num))
+        #if d_range>0:
+            #print(d_range, "\033[32m New in sight:\033[0m",int(d_l_num)," ",int(d_s_num))
         if d_l_num>1.0:
             for i in range(int(d_l_num)-1):
                 self.new_l_agent()
