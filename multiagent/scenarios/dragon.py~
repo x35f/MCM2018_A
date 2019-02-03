@@ -6,15 +6,15 @@ from multiagent.scenario import BaseScenario
 num_dragon=1
 num_l_anim=0
 num_s_anim=0
-num_tree=20
+num_tree=0
 num_home=0
 num_agents=0
-flight_horizon=0.01
-ground_horizon=0.01
+flight_horizon=0.1
+ground_horizon=0.1
 
 
 env_type=ENV_TYPE.Model
-dragon_init_quality=200
+dragon_init_quality=40
 
 
 class Scenario(BaseScenario):
@@ -47,7 +47,7 @@ class Scenario(BaseScenario):
         self.num_l_anim=int(init_home_range*self.dens_l_anim)
         self.num_s_anim=int(init_home_range*self.dens_s_anim)
         #print("init l:",num_l_anim,"\ts:",num_s_anim)
-
+    
     def make_world(self,args):
         world = World()
         env_type=ENV_TYPE[args.env]
@@ -78,10 +78,10 @@ class Scenario(BaseScenario):
         for i, landmark in enumerate(world.landmarks):
             if i==num_landmarks-1:
                 landmark.name="home"
-                landmark.size = 0.01
+                landmark.size = 0.06
             else:
                 landmark.name = 'landmark %d' % i
-                landmark.size = 0.01
+                landmark.size = 0.02
             landmark.collide = False
             landmark.movable = False
 

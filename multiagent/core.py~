@@ -6,11 +6,11 @@ def dis(a,b):
     dy=a[1]-b[1]
     return sqrt(dx*dx+dy*dy)
 
-dragon_init_quality=200
+dragon_init_quality=40
 
 dragon_init_pos=np.array([0.5,0.5])
-flight_horizon=0.01
-ground_horizon=0.01
+flight_horizon=0.1
+ground_horizon=0.1
 #agent self prob
 l_biomas=0.0
 s_biomas=0.0
@@ -358,7 +358,7 @@ class World(object):
         self.agents[id].name = 'dragon %d' % id
         self.agents[id].collide = False
         self.agents[id].adversary = True
-        self.agents[id].size = 0.04
+        self.agents[id].size = 0.02
         self.agents[id].horizon=flight_horizon
         self.agents[id].home_range=drag_range
         self.agents[id].hunt_energy_cost=hunt_energy_cost
@@ -381,7 +381,7 @@ class World(object):
         self.agents[id].name = 'large %d' % id
         self.agents[id].collide = False
         self.agents[id].adversary = False
-        self.agents[id].size = 0.02
+        self.agents[id].size = 0.01
         self.agents[id].biomas=self.l_biomas
         self.agents[id].eaten_prob=l_eaten_prob
         self.agents[id].home_range=l_range
@@ -397,7 +397,7 @@ class World(object):
         self.agents[id].name= 'small %d' %id
         self.agents[id].collide=False
         self.agents[id].adversary=False
-        self.agents[id].size=0.01
+        self.agents[id].size=0.005
         self.agents[id].biomas=self.s_biomas
         self.agents[id].eaten_prob=s_eaten_prob
         self.agents[id].home_range=s_range

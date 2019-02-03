@@ -63,6 +63,8 @@ class MultiAgentEnv(gym.Env):
         # configure spaces
         self.action_space = []
         self.observation_space = []
+        self.accum_l=0.0
+        self.accum_s=0.0
         for agent in self.agents:
             if "dragon" in agent.name:
                 self.n_dragon+=1
@@ -243,7 +245,7 @@ class MultiAgentEnv(gym.Env):
         d_mass=self.d_mass*self.dragon.convert_perc
         #print(d_mass," ",self.d_mass)
         self.dragon.fat+=self.d_fat
-        self.fat=min(self.dragon.quality/2,self.dragon.fat)
+        self.dragon.fat=min(self.dragon.quality/2,self.dragon.fat)
         #print("mass:",self.dragon.mass)
         self.dragon.quality+=d_mass
         self.dragon.quality=min(self.dragon.max_mass,self.dragon.quality)
@@ -254,7 +256,7 @@ class MultiAgentEnv(gym.Env):
         self.dragon.hunt_energy_cost=0.05*m*0.07
         self.dragon.fire_cost=self.dragon.hunt_energy_cost
         self.dragon.exp_income=0.0045*(m**0.75)+1.2*(m**0.22)+0.25*m
-        self.dragon.horizon=0.25*(m**0.22)/self.dragon.home_radius
+        self.dragon.horizon=0.025*(m**0.22)/self.dragon.home_radius
         self.dragon.velocity=57.6*(m**0.13)
         self.world.damping=0.5 if m >200 else 0.25
 
@@ -267,21 +269,23 @@ class MultiAgentEnv(gym.Env):
         d_l_num=(d_range*self.world.dens_l_anim)
         d_s_num=(d_range*self.world.dens_s_anim)
         #if d_range>0:
-            #print(d_range, "\033[32m New in sight:\033[0m",int(d_l_num)," ",int(d_s_num))
+            #print(self.world.dens_l_anim, "\033[32m New in sight:\033[0m",int(d_l_num)," ",int(d_s_num))
         if d_l_num>1.0:
-            for i in range(int(d_l_num)-1):
+            for i in range(int(d_l_num)):
                 self.new_l_agent()
-            else:
-                d_l_seed=random.random()/2.0
-                if d_l_seed<d_l_num:
-                    self.new_l_agent()
+        else:
+            self.accum_l+=d_l_num
+            while self.accum_l >1.0:
+                self.accum_l-=1.0
+                self.new_l_agent()
         if d_s_num>1.0:
-            for i in range(int(d_s_num)-1):
+            for i in range(int(d_s_num)):
                 self.new_s_agent()
-            else:
-                d_s_seed=random.random()/2.0
-                if d_s_seed<d_s_num:
-                    self.new_s_agent()
+        else:
+            self.accum_s+=d_s_num
+            while self.accum_s >1.0:
+                self.accum_s-=1.0
+                self.new_s_agent()
         #daily update for new born animals
         growth_seed=random.random()
         self.anim_update()
